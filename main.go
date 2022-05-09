@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/fatih/color"
+	"github.com/shirou/gopsutil/v3/disk"
 )
 
 type resource struct {
@@ -26,6 +27,12 @@ type directory struct {
 	dirPath    string
 	size       float64
 	percentage float64
+}
+
+type partition struct {
+	Device     string
+	MountPoint string
+	Fstype     string
 }
 
 func dirSize(path string) float64 {
@@ -78,14 +85,12 @@ func makeActualDirMap(path string) error {
 	}
 
 	for _, file := range files {
-		//	if file.IsDir() {
 		actualDirMap[file.Name()] = &directory{
 			dirPath:    fmt.Sprintf("%s/%s", path, file.Name()),
 			size:       dirSize(fmt.Sprintf("%s/%s", path, file.Name())),
 			percentage: 0.0,
 		}
 		total += actualDirMap[file.Name()].size
-		//	}
 	}
 
 	actualDirMap = calculatePercentage(actualDirMap, total)
@@ -118,8 +123,8 @@ func calculatePercentage(m map[string]*directory, total float64) map[string]*dir
 }
 
 func mergeAndDeleteField(m map[string]*directory, path string) map[string]*directory {
+
 	binPathSize := dirSize(path)
-	fmt.Printf("bin dir size: %f", binPathSize)
 
 	m["staticPods"] = &directory{
 		dirPath: m["staticPods"].dirPath,
@@ -144,6 +149,14 @@ func printHeadEstimate() {
 	fmt.Println(strings.Repeat("*", 30))
 }
 
+func diskPartitionInfo() {
+	fmt.Printf("\n\n")
+	fmt.Println(strings.Repeat("*", 19))
+	d := color.New(color.BgBlue)
+	d.Printf("%s\n", "Disk partition info\t")
+	fmt.Println(strings.Repeat("*", 19))
+}
+
 func printHeadActual() {
 	fmt.Printf("\n\n")
 	fmt.Println(strings.Repeat("*", 28))
@@ -165,7 +178,8 @@ func print(m map[string]*directory, total float64) {
 	fmt.Println(strings.Repeat("-", 80))
 	d := color.New(color.BgBlue)
 	d.Printf("%35s", "TOTAL\t")
-	d.Printf("= %10s\n", sizeConversion(total))
+	d.Printf("= %10s", sizeConversion(total))
+	fmt.Printf("\n")
 }
 
 func main() {
@@ -205,6 +219,27 @@ func main() {
 	estDirMap = calculatePercentage(estDirMap, total)
 	printHeadEstimate()
 	print(estDirMap, total)
+
+	var testPart []disk.PartitionStat
+	var err1 error
+
+	testPart, err1 = disk.Partitions(false)
+	if err1 != nil {
+		log.Println(err1)
+	}
+
+	diskPartitionInfo()
+	for _, v := range testPart {
+		if v.Mountpoint == "/sysroot" || v.Mountpoint == "/boot" {
+
+			dUsage, err1 := disk.Usage(v.Mountpoint)
+			if err1 != nil {
+				log.Println(err1)
+			}
+			fmt.Printf("Device: %s, \t Mountpoint: %s, \t Fstype: %s, \t Total: %s, \t Used: %s, \t UsePercentage: %.2f%%, \t Free: %s \n", v.Device, v.Mountpoint, v.Fstype, sizeConversion(float64(dUsage.Total)), sizeConversion(float64(dUsage.Used)), dUsage.UsedPercent, sizeConversion(float64(dUsage.Free)))
+			fmt.Printf("\n\n")
+		}
+	}
 
 	var recovery string
 	if len(os.Args) > 1 {
